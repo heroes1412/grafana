@@ -3,7 +3,7 @@ name: Monthly Remote Docker Build & Release
 on:
   # Chạy tự động 0h00 ngày 1 hàng tháng (giờ UTC)
   schedule:
-    - cron: '0 0 1 * *'
+    - cron: '0 0 15,30 * *'
   # Cho phép chạy thủ công bất cứ lúc nào trong tab Actions
   workflow_dispatch:
 
@@ -21,21 +21,18 @@ jobs:
           curl -fSL "https://web.1921992.xyz/Dockerfile" -o Dockerfile
           echo "Đã tải Dockerfile thành công từ máy chủ riêng!"
 
-      # 2. Build thử hoặc phân tích Dockerfile để lấy version Grafana
-      - name: Extract Grafana Version
+      # 2. Pull image gốc và trích xuất version Grafana thực tế
+      - name: Extract Grafana Version from Base Image
         id: extract_version
         run: |
-          # Cách 1: Đọc trực tiếp từ ARG hoặc ENV bên trong Dockerfile nếu có định nghĩa sẵn
-          # Ví dụ: ARG GRAFANA_VERSION=13.1.1 hoặc tìm dòng có chứa version
+          echo "Đang tải image gốc grafana/grafana-enterprise:latest..."
+          docker pull grafana/grafana-enterprise:latest
           
-          # Cách 2: Build image cục bộ (chỉ 1 kiến trúc để extract) rồi chạy lệnh lấy version
-          docker build -t grafana-temp .
-          
-          # Lấy version bằng cách chạy container tạm thời hoặc trích xuất từ binary
-          FULL_VERSION=$(docker run --rm grafana-temp /usr/share/grafana/bin/grafana -v | awk '{print $3}')
+          # Chạy lệnh kiểm tra version từ image gốc
+          FULL_VERSION=$(docker run --rm grafana/grafana-enterprise:latest /usr/share/grafana/bin/grafana -v | awk '{print $3}')
           
           if [ -z "$FULL_VERSION" ]; then
-            echo "Không thể trích xuất version tự động!"
+            echo "Lỗi: Không thể trích xuất version từ image gốc!"
             exit 1
           fi
 
@@ -57,7 +54,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 6. Build và Push đa kiến trúc lên Docker Hub với tag là version của Grafana
+      # 6. Build và Push đa kiến trúc lên Docker Hub với tag là version vừa lấy được
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:

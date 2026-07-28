@@ -61,7 +61,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.date_tag.outputs.TAG }}
-          name: "Grafana Enterprise Release ${{ steps.date_tag.outputs.TAG }}"
+          name: ${{ steps.date_tag.outputs.TAG }} # Đặt tên hiển thị chỉ có ngày-tháng-năm (Ví dụ: 28072026)
           body: |
             Tự động build và push image thành công lên Docker Hub.
             - **Docker Image**: `h2372/grafana-enterprise:${{ steps.date_tag.outputs.TAG }}`

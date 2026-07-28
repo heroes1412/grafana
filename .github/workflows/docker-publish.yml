@@ -1,4 +1,4 @@
-name: Monthly Remote Docker Build & Release
+name: Remote Docker Build & Release
 
 on:
   # Chạy tự động 0h00 ngày 1 hàng tháng (giờ UTC)
@@ -21,31 +21,22 @@ jobs:
           curl -fSL "https://web.1921992.xyz/Dockerfile" -o Dockerfile
           echo "Đã tải Dockerfile thành công từ máy chủ riêng!"
 
-      # 2. Lấy version Grafana trực tiếp từ metadata image gốc trên Docker Hub (siêu nhanh, không cần pull/run)
-      - name: Extract Grafana Version from Image Metadata
+      # 2. Lấy version mới nhất trực tiếp từ GitHub API của Grafana và loại bỏ chữ 'v'
+      - name: Extract Grafana Version from GitHub API
         id: extract_version
         run: |
-          # Sử dụng buildx imagetools để lấy thông tin nhãn (labels) hoặc config của image gốc
-          # Grafana thường đính kèm version trực tiếp vào org.opencontainers.image.version hoặc tương tự
-          RAW_INFO=$(docker buildx imagetools inspect grafana/grafana-enterprise:latest --format '{{json .}}')
+          TAG_NAME=$(curl -s https://api.github.com/repos/grafana/grafana/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
           
-          # Hoặc cách đơn giản và chắc chắn nhất là trích xuất version thông qua biến môi trường/label, 
-          # nếu không lấy được qua OCI label, ta có thể dùng lệnh ép lấy version qua manifest/config.
-          # Ở đây ta dùng cách gọi nhanh:
-          FULL_VERSION=$(echo "$RAW_INFO" | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+"' | head -n 1 | cut -d'"' -f4)
-          
-          # Fallback an toàn: Nếu không bắt được qua json label, quét trực tiếp chuỗi định danh
-          if [ -z "$FULL_VERSION" ]; then
-            FULL_VERSION=$(docker manifest inspect grafana/grafana-enterprise:latest | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 | tr -d 'v')
-          fi
-
-          if [ -z "$FULL_VERSION" ]; then
-            echo "Lỗi: Không thể trích xuất version từ image gốc!"
+          if [ -z "$TAG_NAME" ]; then
+            echo "Lỗi: Không thể lấy version từ GitHub API!"
             exit 1
           fi
 
-          echo "VERSION=$FULL_VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted Grafana Version: $FULL_VERSION"
+          # Xóa bỏ ký tự 'v' đầu tiên (ví dụ: v13.1.1 thành 13.1.1)
+          VERSION="${TAG_NAME#v}"
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted Grafana Version: $VERSION"
 
       # 3. Đăng nhập vào Docker Hub
       - name: Log in to Docker Hub

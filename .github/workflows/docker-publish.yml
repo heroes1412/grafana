@@ -72,7 +72,7 @@ jobs:
           tag_name: ${{ steps.extract_version.outputs.VERSION }}
           name: Grafana ${{ steps.extract_version.outputs.VERSION }}
           body: |
-            Tự động build và push image thành công lên Docker Hub.
+            Job Done:
             - **Grafana Version**: `${{ steps.extract_version.outputs.VERSION }}`
             - **Docker Image**: `h2372/grafana-enterprise:${{ steps.extract_version.outputs.VERSION }}`
             - **Tag Latest**: `h2372/grafana-enterprise:latest`

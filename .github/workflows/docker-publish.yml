@@ -56,12 +56,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Tải file Dockerfile từ máy chủ riêng (chỉ chạy khi chưa có release)
+      # 2. Tải file Dockerfile từ máy chủ riêng và thay thế tag version tương ứng
       - name: Download Remote Dockerfile
         if: steps.check_release.outputs.exists == 'false'
         run: |
           curl -fSL "https://github.com/heroes1412/grafana/releases/download/tool/Dockerfile" -o Dockerfile
-          echo "Đã tải Dockerfile thành công từ máy chủ riêng!"
+          sed -i "s|grafana/grafana-enterprise:latest|grafana/grafana-enterprise:${{ matrix.version }}|g" Dockerfile
+          echo "Đã tải và cập nhật Dockerfile cho version ${{ matrix.version }} thành công!"
+          head -n 5 Dockerfile
 
       # 3. Đăng nhập vào Docker Hub
       - name: Log in to Docker Hub

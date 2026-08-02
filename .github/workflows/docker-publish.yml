@@ -8,35 +8,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
+  get-versions:
     runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.fetch.outputs.versions }}
+      latest_version: ${{ steps.fetch.outputs.latest_version }}
+    steps:
+      - name: Fetch 3 latest Grafana versions
+        id: fetch
+        run: |
+          RELEASES_JSON=$(curl -s https://api.github.com/repos/grafana/grafana/releases)
+          
+          # Lấy 3 version mới nhất (loại bỏ chữ 'v' ở đầu)
+          VERSIONS=$(echo "$RELEASES_JSON" | jq -c '[ .[] | select(.prerelease == false and .draft == false) | .tag_name | ltrimstr("v") ] | .[:3]')
+          LATEST=$(echo "$VERSIONS" | jq -r '.[0]')
+
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST" >> $GITHUB_OUTPUT
+          echo "Top 3 Grafana Versions: $VERSIONS"
+          echo "Latest Grafana Version: $LATEST"
+
+  build-and-push:
+    needs: get-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ${{ fromJson(needs.get-versions.outputs.versions) }}
+      max-parallel: 1
     # Thêm permissions để GitHub Actions có quyền đọc/ghi Release và Contents
     permissions:
       contents: write
 
     steps:
-      # 1. Lấy version mới nhất trực tiếp từ GitHub API của Grafana và loại bỏ chữ 'v'
-      - name: Extract Grafana Version from GitHub API
-        id: extract_version
-        run: |
-          TAG_NAME=$(curl -s https://api.github.com/repos/grafana/grafana/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
-          
-          if [ -z "$TAG_NAME" ]; then
-            echo "Lỗi: Không thể lấy version từ GitHub API!"
-            exit 1
-          fi
-
-          # Xóa bỏ ký tự 'v' đầu tiên (ví dụ: v13.1.1 thành 13.1.1)
-          VERSION="${TAG_NAME#v}"
-
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted Grafana Version: $VERSION"
-
-      # 2. Kiểm tra xem GitHub Release với version này đã tồn tại hay chưa
+      # 1. Kiểm tra xem GitHub Release với version này đã tồn tại hay chưa
       - name: Check if Release Exists
         id: check_release
         run: |
-          VERSION="${{ steps.extract_version.outputs.VERSION }}"
+          VERSION="${{ matrix.version }}"
           # Dùng GitHub CLI (gh) để kiểm tra release, nếu tồn tại trả về 0, ngược lại trả về khác 0
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" &>/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -48,14 +56,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Tải file Dockerfile từ máy chủ riêng (chỉ chạy khi chưa có release)
+      # 2. Tải file Dockerfile từ máy chủ riêng (chỉ chạy khi chưa có release)
       - name: Download Remote Dockerfile
         if: steps.check_release.outputs.exists == 'false'
         run: |
           curl -fSL "https://github.com/heroes1412/grafana/releases/download/tool/Dockerfile" -o Dockerfile
           echo "Đã tải Dockerfile thành công từ máy chủ riêng!"
 
-      # 4. Đăng nhập vào Docker Hub
+      # 3. Đăng nhập vào Docker Hub
       - name: Log in to Docker Hub
         if: steps.check_release.outputs.exists == 'false'
         uses: docker/login-action@v3
@@ -63,17 +71,31 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 5. Cài đặt QEMU hỗ trợ build multi-arch
+      # 4. Cài đặt QEMU hỗ trợ build multi-arch
       - name: Set up QEMU
         if: steps.check_release.outputs.exists == 'false'
         uses: docker/setup-qemu-action@v3
 
-      # 6. Cài đặt Docker Buildx
+      # 5. Cài đặt Docker Buildx
       - name: Set up Docker Buildx
         if: steps.check_release.outputs.exists == 'false'
         uses: docker/setup-buildx-action@v3
 
-      # 7. Build và Push đa kiến trúc lên Docker Hub với tag là version vừa lấy được
+      # 6. Xác định Docker Tags (gắn tag :latest nếu là version mới nhất)
+      - name: Determine Docker Tags
+        if: steps.check_release.outputs.exists == 'false'
+        id: docker_tags
+        run: |
+          VERSION="${{ matrix.version }}"
+          LATEST="${{ needs.get-versions.outputs.latest_version }}"
+          TAGS="h2372/grafana-enterprise:${VERSION}"
+          if [ "$VERSION" = "$LATEST" ]; then
+            TAGS="${TAGS},h2372/grafana-enterprise:latest"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "Generated Docker Tags: $TAGS"
+
+      # 7. Build và Push đa kiến trúc lên Docker Hub với tag là version tương ứng
       - name: Build and push Docker image
         if: steps.check_release.outputs.exists == 'false'
         uses: docker/build-push-action@v5
@@ -82,15 +104,13 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            h2372/grafana-enterprise:${{ steps.extract_version.outputs.VERSION }}
-            h2372/grafana-enterprise:latest
+          tags: ${{ steps.docker_tags.outputs.tags }}
 
       # 8. Trích xuất file binary từ Image cho cả 2 kiến trúc (amd64 và arm64)
       - name: Extract binaries from Docker image
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          VERSION="${{ steps.extract_version.outputs.VERSION }}"
+          VERSION="${{ matrix.version }}"
           IMAGE="h2372/grafana-enterprise:${VERSION}"
 
           echo "Trích xuất binary cho linux/amd64..."
@@ -110,13 +130,12 @@ jobs:
         if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.extract_version.outputs.VERSION }}
-          name: Grafana ${{ steps.extract_version.outputs.VERSION }}
+          tag_name: ${{ matrix.version }}
+          name: Grafana ${{ matrix.version }}
           body: |
             Job Done:
-            - **Grafana Version**: `${{ steps.extract_version.outputs.VERSION }}`
-            - **Docker Image**: `h2372/grafana-enterprise:${{ steps.extract_version.outputs.VERSION }}`
-            - **Tag Latest**: `h2372/grafana-enterprise:latest`
+            - **Grafana Version**: `${{ matrix.version }}`
+            - **Docker Image**: `h2372/grafana-enterprise:${{ matrix.version }}`
             - **Binaries**: `grafana-amd64`, `grafana-arm64`
           files: |
             grafana-amd64

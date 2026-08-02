@@ -86,7 +86,26 @@ jobs:
             h2372/grafana-enterprise:${{ steps.extract_version.outputs.VERSION }}
             h2372/grafana-enterprise:latest
 
-      # 8. Tự động tạo Git Tag và GitHub Release tương ứng với version Grafana
+      # 8. Trích xuất file binary từ Image cho cả 2 kiến trúc (amd64 và arm64)
+      - name: Extract binaries from Docker image
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.extract_version.outputs.VERSION }}"
+          IMAGE="h2372/grafana-enterprise:${VERSION}"
+
+          echo "Trích xuất binary cho linux/amd64..."
+          docker create --name temp_amd64 --platform linux/amd64 $IMAGE
+          docker cp temp_amd64:/usr/share/grafana/bin/grafana ./grafana-amd64
+          docker rm temp_amd64
+
+          echo "Trích xuất binary cho linux/arm64..."
+          docker create --name temp_arm64 --platform linux/arm64 $IMAGE
+          docker cp temp_arm64:/usr/share/grafana/bin/grafana ./grafana-arm64
+          docker rm temp_arm64
+
+          ls -lh grafana-amd64 grafana-arm64
+
+      # 9. Tự động tạo Git Tag và GitHub Release tương ứng với version Grafana
       - name: Create GitHub Release and Tag
         if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -98,5 +117,9 @@ jobs:
             - **Grafana Version**: `${{ steps.extract_version.outputs.VERSION }}`
             - **Docker Image**: `h2372/grafana-enterprise:${{ steps.extract_version.outputs.VERSION }}`
             - **Tag Latest**: `h2372/grafana-enterprise:latest`
+            - **Binaries**: `grafana-amd64`, `grafana-arm64`
+          files: |
+            grafana-amd64
+            grafana-arm64
           draft: false
           prerelease: false

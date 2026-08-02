@@ -52,7 +52,7 @@ jobs:
       - name: Download Remote Dockerfile
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          curl -fSL "https://web.1921992.xyz/Dockerfile" -o Dockerfile
+          curl -fSL "https://github.com/heroes1412/grafana/releases/download/tool/Dockerfile" -o Dockerfile
           echo "Đã tải Dockerfile thành công từ máy chủ riêng!"
 
       # 4. Đăng nhập vào Docker Hub

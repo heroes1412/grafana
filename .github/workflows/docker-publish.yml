@@ -20,7 +20,7 @@ jobs:
           RELEASES_JSON=$(curl -s https://api.github.com/repos/grafana/grafana/releases)
           
           # Lấy 3 version mới nhất (loại bỏ chữ 'v' ở đầu)
-          VERSIONS=$(echo "$RELEASES_JSON" | jq -c '[ .[] | select(.prerelease == false and .draft == false) | .tag_name | ltrimstr("v") ] | .[:3]')
+          VERSIONS=$(echo "$RELEASES_JSON" | jq -c '[ .[] | select(.prerelease == false and .draft == false) | .tag_name | ltrimstr("v") ] | .[:4]')
           LATEST=$(echo "$VERSIONS" | jq -r '.[0]')
 
           echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
